@@ -53,3 +53,9 @@ dkms.conf
 
 # Vim files
 *.swp
+
+# Executables
+proxy
+
+# Tiny files
+tiny/*
