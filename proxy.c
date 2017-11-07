@@ -19,6 +19,13 @@ typedef struct _request{
     int  extraCount;
 } request;
 
+typedef struct _response{
+    int responseAcquired;
+    int headerCount;
+    char headers[20][MAXLINE];
+    char data[MAXBUF];
+} response;
+
 typedef struct _threadArgs{
     int fd;
     struct sockaddr_in sock;
@@ -26,11 +33,16 @@ typedef struct _threadArgs{
 } threadArgs;
 
 void parse(rio_t*,int, request*);
-void forward(rio_t*, request*);
+void forward(request*,response*);
 void* thread(void* argv);
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+
+void sigpipe_handler(int sig){
+    printf("SIGPIPE received and ignored");
+    return;
+}
 
 int main(int argc, char** argv)
 {
@@ -38,6 +50,8 @@ int main(int argc, char** argv)
     socklen_t clientlen;
     struct sockaddr_in clientAddr;
     pthread_t tid;
+
+    Signal(SIGPIPE,sigpipe_handler);
 
     // If we have a port passed in continue
     if(argc == 2){
@@ -54,7 +68,6 @@ int main(int argc, char** argv)
             threadArgs* args = (threadArgs*) malloc(sizeof(threadArgs));
             // Block until we get a connection
             connfd = Accept(listenfd, (SA *)(&(args->sock)), &clientlen);
-            printf("New conn\n");
             args->fd = connfd;
             Pthread_create(&tid,NULL,thread,(void *) args);
 //            Close(connfd);
@@ -67,57 +80,51 @@ int main(int argc, char** argv)
 }
 
 void* thread(void* argv){
-        rio_t rio;
+    rio_t rio;
+    int i;
+    Pthread_detach(pthread_self());
 
+    threadArgs* args = (threadArgs*) argv;
+    int fd = args->fd;
+    struct sockaddr_in sock;
+    memcpy(&sock,&(args->sock),sizeof(struct sockaddr_in));
+    free(args);
+    printf("New conn\n");
 
-        Pthread_detach(pthread_self());
+    Signal(SIGPIPE,sigpipe_handler);
 
-        threadArgs* args = (threadArgs*) argv;
-        int fd = args->fd;
-        struct sockaddr_in sock;
-        memcpy(&sock,&(args->sock),sizeof(struct sockaddr_in));
-        free(args);
+    // Init rio
+    Rio_readinitb(&rio, fd);
 
-        // Init rio
-        Rio_readinitb(&rio, fd);
+    // Request struct to store all the request info
+    request* req = malloc(sizeof(request));
 
-        // Request struct to store all the request info
-        request* req = malloc(sizeof(request));
+    // Connection & Proxy-Connection always need to be close
+    strcpy(req->conn,"close");
+    strcpy(req->proxyConn,"close");
+    req->extraCount=0;
 
-        // Connection & Proxy-Connection always need to be close
-        strcpy(req->conn,"close");
-        strcpy(req->proxyConn,"close");
-        req->extraCount=0;
+    parse(&rio,fd,req);
 
-        parse(&rio,fd,req);
+    response* res = malloc(sizeof(response));
+    forward(req,res);
+    if(res->responseAcquired == 1){
+        char resBuf[MAXBUF];
+        for(i=0;i<res->headerCount;i++)
+            sprintf(resBuf+strlen(resBuf),"%s",res->headers[i]);
+        sprintf(resBuf+strlen(resBuf),"%s",res->data);
+        Rio_writen(fd,resBuf,strlen(resBuf));
+    }
 
-        // TODO: REMOVE THIS
-        // This is just debug prints
-        printf("%s ",req->method);
-        printf("%s ",req->path);
-        printf("%s\n",req->version);
-        printf("Host: %s",req->host);
-        printf("User-Agent: %s",user_agent_hdr);
-        printf("Connection: %s\n", req->conn);
-        printf("Proxy-Connection: %s\n", req->proxyConn);
-
-        int i;
-        for(i = 0; i < req->extraCount; i++)
-            printf("%s",req->extras[i]);
-
-        forward(&rio,req);
-
-        // TODO: Forward this to the specified host
-        // Connection is done for now so just close it.
-        Close(fd);
-        return NULL;
+    // Connection is done for now so just close it.
+    Close(fd);
+    return NULL;
 }
 
 void parse(rio_t* rio, int connfd, request* req){
     int n;
     char* bufPtr;
     char* tok;
-
 
     // Request buffer
     char buf[MAXLINE];
@@ -143,8 +150,6 @@ void parse(rio_t* rio, int connfd, request* req){
         // Copy our buffer so we have a buffer to tokenize
         char bufCpy[MAXBUF];
         strcpy(bufCpy,buf);
-
-        // Pointers for string manipulation
 
         // Get the first token
         tok = strtok_r(bufCpy," ",&bufPtr);
@@ -173,8 +178,35 @@ void parse(rio_t* rio, int connfd, request* req){
     }
 }
 
-void forward(rio_t* rio, request* req){
+void forward(request* req, response* res){
+    rio_t rio;
+    char body[MAXBUF],buf[MAXLINE];
+    int dataFlag = 0;
+    // Build msg body
+    sprintf(body,"%s %s %s\r\n",req->method,req->path,req->version);
+    sprintf(body+strlen(body),"Host: %s\r\n",req->host);
+    sprintf(body+strlen(body),"User-Agent: %s", user_agent_hdr);
+    sprintf(body+strlen(body),"Connection: %s\r\n", req->conn);
+    sprintf(body+strlen(body),"Proxy-Connection: %s\r\n", req->proxyConn);
 
-    // TODO: Forward the request to the target server
+    int i,n;
+    for(i = 0; i < req->extraCount; i++)
+        sprintf(body+strlen(body),"%s",req->extras[i]);
 
+
+    int clientfd = Open_clientfd(req->host, req->port);
+    Rio_readinitb(&rio,clientfd);
+
+    Rio_writen(clientfd,body,strlen(body));
+
+    while((n=Rio_readlineb(&rio,buf,MAXLINE)) != 0){
+        res->responseAcquired=1;
+        if(strcmp(buf,"\r\n")==0)
+            dataFlag = 1;
+
+        if(dataFlag == 0)
+            strcpy(res->headers[res->headerCount++],buf);
+        else
+            sprintf(res->data+strlen(res->data),"%s",buf);
+    }
 }
