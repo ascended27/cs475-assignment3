@@ -35,6 +35,7 @@ typedef struct _threadArgs{
 void parse(rio_t*,int, request*);
 void forward(request*,response*);
 void* thread(void* argv);
+void printResponse(response*);
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -108,7 +109,9 @@ void* thread(void* argv){
 
     response* res = malloc(sizeof(response));
     forward(req,res);
+
     if(res->responseAcquired == 1){
+        printResponse(res);
         char resBuf[MAXBUF];
         for(i=0;i<res->headerCount;i++)
             sprintf(resBuf+strlen(resBuf),"%s",res->headers[i]);
@@ -172,6 +175,9 @@ void parse(rio_t* rio, int connfd, request* req){
         } else{ // Otherwise we have an extra
             // Add the extra to the extras array
             strcpy(req->extras[req->extraCount++],buf);
+            if(strcmp(buf,"\r\n")==0){
+                break;
+            }
         }
         // Clear our buffer out
         memset(buf,0,sizeof(buf));
@@ -188,6 +194,11 @@ void forward(request* req, response* res){
     sprintf(body+strlen(body),"User-Agent: %s", user_agent_hdr);
     sprintf(body+strlen(body),"Connection: %s\r\n", req->conn);
     sprintf(body+strlen(body),"Proxy-Connection: %s\r\n", req->proxyConn);
+
+    printf("--------------------------------------------\n");
+    printf("Forward Request\n");
+    printf("%s",body);
+    printf("--------------------------------------------\n\n");
 
     int i,n;
     for(i = 0; i < req->extraCount; i++)
@@ -209,4 +220,17 @@ void forward(request* req, response* res){
         else
             sprintf(res->data+strlen(res->data),"%s",buf);
     }
+
+    Close(clientfd);
+}
+
+void printResponse(response* res){
+    int i;
+    printf("-------------------------------------------\n");
+    printf("Response\n");
+    for(i = 0; i < res->headerCount; i++)
+        printf("%s",res->headers[i]);
+
+    printf("%s",res->data);
+    printf("-------------------------------------------\n");
 }
