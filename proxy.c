@@ -117,6 +117,7 @@ void* thread(void* argv){
             sprintf(resBuf+strlen(resBuf),"%s",res->headers[i]);
         sprintf(resBuf+strlen(resBuf),"%s",res->data);
         Rio_writen(fd,resBuf,strlen(resBuf));
+        memset(resBuf,0,strlen(resBuf));
     }
 
     // Connection is done for now so just close it.
@@ -144,6 +145,7 @@ void parse(rio_t* rio, int connfd, request* req){
                 strcpy(req->method,method);
                 strcpy(req->path,uri);
                 strcpy(req->version,"HTTP/1.0");
+                strcpy(req->path,(strrchr(uri,'/')));
             }
     }
 
@@ -188,9 +190,10 @@ void forward(request* req, response* res){
     rio_t rio;
     char body[MAXBUF],buf[MAXLINE];
     int dataFlag = 0;
+
     // Build msg body
     sprintf(body,"%s %s %s\r\n",req->method,req->path,req->version);
-    sprintf(body+strlen(body),"Host: %s\r\n",req->host);
+    sprintf(body+strlen(body),"Host: %s:%s\r\n",req->host,req->port);
     sprintf(body+strlen(body),"User-Agent: %s", user_agent_hdr);
     sprintf(body+strlen(body),"Connection: %s\r\n", req->conn);
     sprintf(body+strlen(body),"Proxy-Connection: %s\r\n", req->proxyConn);
@@ -203,7 +206,6 @@ void forward(request* req, response* res){
     int i,n;
     for(i = 0; i < req->extraCount; i++)
         sprintf(body+strlen(body),"%s",req->extras[i]);
-
 
     int clientfd = Open_clientfd(req->host, req->port);
     Rio_readinitb(&rio,clientfd);
