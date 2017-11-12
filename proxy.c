@@ -10,7 +10,6 @@ typedef struct _request{
     char method[16];
     char path[MAXLINE];
     char version[16];
-    char contentType[128];
     char host[MAXLINE];
     char port[MAXLINE];
     char conn[6];
@@ -19,13 +18,6 @@ typedef struct _request{
     int  extraCount;
 } request;
 
-typedef struct _response{
-    int responseAcquired;
-    int headerCount;
-    char headers[20][MAXLINE];
-    char data[MAXBUF];
-} response;
-
 typedef struct _threadArgs{
     int fd;
     struct sockaddr_in sock;
@@ -33,9 +25,9 @@ typedef struct _threadArgs{
 } threadArgs;
 
 void parse(rio_t*,int, request*);
-void forward(request*,response*);
+void forward(request*,int);
 void* thread(void* argv);
-void printResponse(response*);
+void errorMsg(char* error);
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -52,6 +44,7 @@ int main(int argc, char** argv)
     struct sockaddr_in clientAddr;
     pthread_t tid;
 
+    // Install SIGPIPE handler
     Signal(SIGPIPE,sigpipe_handler);
 
     // If we have a port passed in continue
@@ -66,12 +59,17 @@ int main(int argc, char** argv)
         while(1){
             // Create a socket to read from
             clientlen = sizeof(clientAddr);
+
+            // Initialize thread args to pass to the new thread
             threadArgs* args = (threadArgs*) malloc(sizeof(threadArgs));
+
             // Block until we get a connection
             connfd = Accept(listenfd, (SA *)(&(args->sock)), &clientlen);
+
+            // Add the new socket to the thread args and create a new thread
+            // to handle the connection
             args->fd = connfd;
             Pthread_create(&tid,NULL,thread,(void *) args);
-//            Close(connfd);
         }
 
         exit(0);
@@ -82,22 +80,32 @@ int main(int argc, char** argv)
 
 void* thread(void* argv){
     rio_t rio;
-    int i;
+
+    // Detach the thread from the main thread so the main
+    // thread doesn't need to handle resources after this
+    // thread exits
     Pthread_detach(pthread_self());
 
+    // Install SIGPIPE handler
+    Signal(SIGPIPE,sigpipe_handler);
+
+    // Convert passed in arguments to a threadArgs structure
+    // So we can extract the passed in thread arguments.
     threadArgs* args = (threadArgs*) argv;
     int fd = args->fd;
     struct sockaddr_in sock;
     memcpy(&sock,&(args->sock),sizeof(struct sockaddr_in));
-    free(args);
-    printf("New conn\n");
 
-    Signal(SIGPIPE,sigpipe_handler);
+    // Release the passed in args as they are no longer needed
+    free(args);
+
+    // Log that a new connection has been made
+    printf("New conn\n");
 
     // Init rio
     Rio_readinitb(&rio, fd);
 
-    // Request struct to store all the request info
+    // Request structure to store all the request info
     request* req = malloc(sizeof(request));
 
     // Connection & Proxy-Connection always need to be close
@@ -105,20 +113,10 @@ void* thread(void* argv){
     strcpy(req->proxyConn,"close");
     req->extraCount=0;
 
+    // Parse the request then forward it to the server, then return
+    // the server's response to the client
     parse(&rio,fd,req);
-
-    response* res = malloc(sizeof(response));
-    forward(req,res);
-
-    if(res->responseAcquired == 1){
-        printResponse(res);
-        char resBuf[MAXBUF];
-        for(i=0;i<res->headerCount;i++)
-            sprintf(resBuf+strlen(resBuf),"%s",res->headers[i]);
-        sprintf(resBuf+strlen(resBuf),"%s",res->data);
-        Rio_writen(fd,resBuf,strlen(resBuf));
-        memset(resBuf,0,strlen(resBuf));
-    }
+    forward(req,fd);
 
     // Connection is done for now so just close it.
     Close(fd);
@@ -131,21 +129,18 @@ void parse(rio_t* rio, int connfd, request* req){
     char* tok;
 
     // Request buffer
-    char buf[MAXLINE];
-
-    char method[MAXLINE],uri[MAXLINE],version[MAXLINE],tmp[MAXLINE];
+    char buf[MAXLINE], method[MAXLINE], path[MAXLINE], version[MAXLINE], tmp[MAXLINE];
 
     // Get the method, uri, and version
     if((n=Rio_readlineb(rio,buf,MAXLINE)) != 0){
-            sscanf(buf,"%s %s %s",method,uri,version);
+            sscanf(buf,"%s %s %s",method,path,version);
             if(strcasecmp(method,"GET")){
                 // TODO: Make this respond to user with error 501
                 printf("Error only support method: GET\n");
             } else{
                 strcpy(req->method,method);
-                strcpy(req->path,uri);
                 strcpy(req->version,"HTTP/1.0");
-                strcpy(req->path,(strrchr(uri,'/')));
+                strcpy(req->path,(strrchr(path,'/')));
             }
     }
 
@@ -186,10 +181,15 @@ void parse(rio_t* rio, int connfd, request* req){
     }
 }
 
-void forward(request* req, response* res){
+void forward(request* req, int clientfd){
     rio_t rio;
-    char body[MAXBUF],buf[MAXLINE];
-    int dataFlag = 0;
+    int i,n,size,len;
+    int total_size = 0;
+    char body[MAXBUF],buf[MAXLINE],contentLength[MAXLINE],tmp[MAXLINE];
+    char* tok;
+    char* tmpPtr;
+
+    memset(contentLength,0,sizeof(contentLength));
 
     // Build msg body
     sprintf(body,"%s %s %s\r\n",req->method,req->path,req->version);
@@ -198,41 +198,62 @@ void forward(request* req, response* res){
     sprintf(body+strlen(body),"Connection: %s\r\n", req->conn);
     sprintf(body+strlen(body),"Proxy-Connection: %s\r\n", req->proxyConn);
 
+    // Print the request
     printf("--------------------------------------------\n");
     printf("Forward Request\n");
     printf("%s",body);
+    for(i = 0; i < req->extraCount; i++)
+            sprintf(body+strlen(body),"%s",req->extras[i]);
+    printf("--------------------------------------------\n");
+
+    int serverfd = Open_clientfd(req->host, req->port);
+    Rio_readinitb(&rio,serverfd);
+
+    Rio_writen(serverfd,body,strlen(body));
+
+    printf("Forward Response\n");
+    while((n=Rio_readlineb(&rio,buf,MAXLINE)) != 0){
+
+        // Extract content type and length
+        strcpy(tmp,buf);
+        tok = strtok_r(tmp," ",&tmpPtr);
+        if(strcmp(tok,"Content-length:")==0){
+            strcpy(contentLength,tmpPtr);
+            contentLength[strlen(contentLength)-2]='\0';
+        }
+
+        // Write buffer out to stdout and to the client
+        if(strcmp(buf,"\r\n")!=0)
+            printf("%s",buf);
+        Rio_writen(clientfd,buf,strlen(buf));
+
+        // If the buffer is '\r\n' then we are done reading headers
+        if(strcmp(buf,"\r\n")==0){
+            break;
+        }
+
+        // Clear the buffer after each header line
+        memset(buf,0,sizeof(buf));
+    }
     printf("--------------------------------------------\n\n");
 
-    int i,n;
-    for(i = 0; i < req->extraCount; i++)
-        sprintf(body+strlen(body),"%s",req->extras[i]);
+    len = atoi(contentLength);
 
-    int clientfd = Open_clientfd(req->host, req->port);
-    Rio_readinitb(&rio,clientfd);
-
-    Rio_writen(clientfd,body,strlen(body));
-
-    while((n=Rio_readlineb(&rio,buf,MAXLINE)) != 0){
-        res->responseAcquired=1;
-        if(strcmp(buf,"\r\n")==0)
-            dataFlag = 1;
-
-        if(dataFlag == 0)
-            strcpy(res->headers[res->headerCount++],buf);
-        else
-            sprintf(res->data+strlen(res->data),"%s",buf);
+    while (len > 0){
+        int readn = (len > MAXLINE) ? MAXLINE : len;
+        if ((size = Rio_readnb(&rio, body, readn)) != readn){
+            fprintf(stderr, "read from server error\n");
+            exit(0);
+        }
+        total_size += size;
+        Rio_writen(clientfd, body, size);
+        len -= readn;
     }
 
-    Close(clientfd);
+    Close(serverfd);
 }
 
-void printResponse(response* res){
-    int i;
-    printf("-------------------------------------------\n");
-    printf("Response\n");
-    for(i = 0; i < res->headerCount; i++)
-        printf("%s",res->headers[i]);
-
-    printf("%s",res->data);
-    printf("-------------------------------------------\n");
+void errorMsg(char* error){
+    //TODO:  print out error to client
+    //TODO:  print out error to stderr to keep track in server
 }
