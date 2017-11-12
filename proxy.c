@@ -193,17 +193,22 @@ void forward(request* req, int clientfd){
 
     // Build msg body
     sprintf(body,"%s %s %s\r\n",req->method,req->path,req->version);
-    sprintf(body+strlen(body),"Host: %s:%s\r\n",req->host,req->port);
+    sprintf(body+strlen(body),"Host: %s",req->host);
+    if(strlen(req->port)==0)
+        sprintf(body+strlen(body),":80\r\n");
+    else
+        sprintf(body+strlen(body),":%s\r\n",req->port);
     sprintf(body+strlen(body),"User-Agent: %s", user_agent_hdr);
     sprintf(body+strlen(body),"Connection: %s\r\n", req->conn);
     sprintf(body+strlen(body),"Proxy-Connection: %s\r\n", req->proxyConn);
+
+    for(i = 0; i < req->extraCount; i++)
+            sprintf(body+strlen(body),"%s",req->extras[i]);
 
     // Print the request
     printf("--------------------------------------------\n");
     printf("Forward Request\n");
     printf("%s",body);
-    for(i = 0; i < req->extraCount; i++)
-            sprintf(body+strlen(body),"%s",req->extras[i]);
     printf("--------------------------------------------\n");
 
     int serverfd = Open_clientfd(req->host, req->port);
