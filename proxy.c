@@ -136,7 +136,7 @@ void parse(rio_t* rio, int connfd, request* req){
             sscanf(buf,"%s %s %s",method,path,version);
             if(strcasecmp(method,"GET")){
                 // TODO: Make this respond to user with error 501
-                printf("Error only support method: GET\n");
+                errorMsg("Error only support method: GET\n");
             } else{
                 strcpy(req->method,method);
                 strcpy(req->version,"HTTP/1.0");
