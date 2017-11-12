@@ -133,6 +133,8 @@ void parse(rio_t* rio, int connfd, request* req){
 
     // Get the method, uri, and version
     if((n=Rio_readlineb(rio,buf,MAXLINE)) != 0){
+        //Check received request
+        printf("RAW REQUEST: %s", buf);
             sscanf(buf,"%s %s %s",method,path,version);
             if(strcasecmp(method,"GET")){
                 // TODO: Make this respond to user with error 501
@@ -140,7 +142,14 @@ void parse(rio_t* rio, int connfd, request* req){
             } else{
                 strcpy(req->method,method);
                 strcpy(req->version,"HTTP/1.0");
-                strcpy(req->path,(strrchr(path,'/')));
+                //Old version was getting the substring with the last occurrence of the backslash
+//                strcpy(req->path,(strrchr(path,'/')));
+
+                //New version is getting substring from first occurrence of period
+                //And then getting the substring from that one from the first
+                //occurrence of front slash.
+                strcpy(req->path,strchr((strchr(path,'.')), '/'));
+
             }
     }
 
@@ -157,12 +166,22 @@ void parse(rio_t* rio, int connfd, request* req){
         if(strcmp(tok,"Host:")==0){ // If our token is Host
             // Get the value of Host and store it in the request host
             tok = strtok_r(bufPtr," ",&bufPtr);
+//            printf("THE HOST: %s\n=================================\n", tok);
+
             tok[strcspn(tok,"\r\n")]=0;
+
+            //Debugging
+//            printf("THE HOST: %s\n=================================\n", tok);
+
             strcpy(req->host,tok);
             strcpy(tmp,req->host);
             tok = strtok_r(tmp,":",&bufPtr);
+//            printf("THE HOST WITHOUT PORT: %s\n=================================\n", tok);
+
             strcpy(req->host,tok);
             strcpy(req->port,bufPtr);
+//            printf("THE PORT: %s\n=================================\n", bufPtr);
+
         } else if(strcmp(tok,"Proxy-Connection:")==0){ // If our token is Proxy-Conn
             // We don't need to do anything we are always sending close for this
         } else if(strcmp(tok,"Connection:")==0){ // If our token is Connection
@@ -198,7 +217,8 @@ void forward(request* req, int clientfd){
         sprintf(body+strlen(body),":80\r\n");
     else
         sprintf(body+strlen(body),":%s\r\n",req->port);
-    sprintf(body+strlen(body),"User-Agent: %s", user_agent_hdr);
+//    sprintf(body+strlen(body),"User-Agent: %s", user_agent_hdr);
+    sprintf(body+strlen(body),"%s", user_agent_hdr);
     sprintf(body+strlen(body),"Connection: %s\r\n", req->conn);
     sprintf(body+strlen(body),"Proxy-Connection: %s\r\n", req->proxyConn);
 
