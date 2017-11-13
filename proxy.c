@@ -24,7 +24,7 @@ typedef struct _threadArgs{
     socklen_t clientlen;
 } threadArgs;
 
-void parse(rio_t*,int, request*);
+int parse(rio_t*,int, request*);
 void forward(request*,int);
 void* thread(void* argv);
 void errorMsg(char* error);
@@ -99,9 +99,6 @@ void* thread(void* argv){
     // Release the passed in args as they are no longer needed
     free(args);
 
-    // Log that a new connection has been made
-    printf("New conn\n");
-
     // Init rio
     Rio_readinitb(&rio, fd);
 
@@ -115,15 +112,16 @@ void* thread(void* argv){
 
     // Parse the request then forward it to the server, then return
     // the server's response to the client
-    parse(&rio,fd,req);
-    forward(req,fd);
+    if(parse(&rio,fd,req)==1){
+        forward(req,fd);
+    }
 
     // Connection is done for now so just close it.
     Close(fd);
     return NULL;
 }
 
-void parse(rio_t* rio, int connfd, request* req){
+int parse(rio_t* rio, int connfd, request* req){
     int n;
     char* bufPtr;
     char* tok;
@@ -144,49 +142,54 @@ void parse(rio_t* rio, int connfd, request* req){
             }
     }
 
-    // Read lines until there are no more
-    while((n=Rio_readlineb(rio,buf,MAXLINE)) != 0){
+    if(strlen(req->path)!=0){
+        // Read lines until there are no more
+        while((n=Rio_readlineb(rio,buf,MAXLINE)) != 0){
 
-        // Copy our buffer so we have a buffer to tokenize
-        char bufCpy[MAXBUF];
-        strcpy(bufCpy,buf);
+            // Copy our buffer so we have a buffer to tokenize
+            char bufCpy[MAXBUF];
+            strcpy(bufCpy,buf);
 
-        // Get the first token
-        tok = strtok_r(bufCpy," ",&bufPtr);
+            // Get the first token
+            tok = strtok_r(bufCpy," ",&bufPtr);
 
-        if(strcmp(tok,"Host:")==0){ // If our token is Host
-            // Get the value of Host and store it in the request host
-            tok = strtok_r(bufPtr," ",&bufPtr);
-            tok[strcspn(tok,"\r\n")]=0;
-            strcpy(req->host,tok);
-            strcpy(tmp,req->host);
-            tok = strtok_r(tmp,":",&bufPtr);
-            strcpy(req->host,tok);
-            if(strlen(bufPtr)==0)
-                strcpy(req->port,"80");
-            else
-                strcpy(req->port,bufPtr);
-            if(strcmp(req->host,"")==0 || strcmp(req->port,"")==0){
-                printf("Bad host:port %s:%s\n",req->host,req->port);
-                exit(0);
+            if(strcmp(tok,"Host:")==0){ // If our token is Host
+                // Get the value of Host and store it in the request host
+                tok = strtok_r(bufPtr," ",&bufPtr);
+                tok[strcspn(tok,"\r\n")]=0;
+                strcpy(req->host,tok);
+                strcpy(tmp,req->host);
+                tok = strtok_r(tmp,":",&bufPtr);
+                strcpy(req->host,tok);
+                if(strlen(bufPtr)==0)
+                    strcpy(req->port,"80");
+                else
+                    strcpy(req->port,bufPtr);
+                if(strcmp(req->host,"")==0 || strcmp(req->port,"")==0){
+                    printf("Bad host:port %s:%s\n",req->host,req->port);
+                    exit(0);
+                }
+
+            } else if(strcmp(tok,"Proxy-Connection:")==0){ // If our token is Proxy-Conn
+                // We don't need to do anything we are always sending close for this
+            } else if(strcmp(tok,"Connection:")==0){ // If our token is Connection
+                // We don't need to do anything we are always sending close for this
+            } else if(strcmp(tok,"User-Agent:")==0){ // If our token is User-Agent
+                // We don't need to do anything we are always sending user_agent_hdr for this
+            } else{ // Otherwise we have an extra
+                // Add the extra to the extras array
+                strcpy(req->extras[req->extraCount++],buf);
+                if(strcmp(buf,"\r\n")==0){
+                    break;
+                }
             }
-
-        } else if(strcmp(tok,"Proxy-Connection:")==0){ // If our token is Proxy-Conn
-            // We don't need to do anything we are always sending close for this
-        } else if(strcmp(tok,"Connection:")==0){ // If our token is Connection
-            // We don't need to do anything we are always sending close for this
-        } else if(strcmp(tok,"User-Agent:")==0){ // If our token is User-Agent
-            // We don't need to do anything we are always sending user_agent_hdr for this
-        } else{ // Otherwise we have an extra
-            // Add the extra to the extras array
-            strcpy(req->extras[req->extraCount++],buf);
-            if(strcmp(buf,"\r\n")==0){
-                break;
-            }
+            // Clear our buffer out
+            memset(buf,0,sizeof(buf));
         }
-        // Clear our buffer out
-        memset(buf,0,sizeof(buf));
+        return 1;
     }
+    return -1;
+
 }
 
 void forward(request* req, int clientfd){
