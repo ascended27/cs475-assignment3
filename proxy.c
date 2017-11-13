@@ -166,11 +166,16 @@ void parse(rio_t* rio, int connfd, request* req){
                 strcpy(req->port,"80");
             else
                 strcpy(req->port,bufPtr);
+            if(strcmp(req->host,"")==0 || strcmp(req->port,"")==0){
+                printf("Bad host:port %s:%s\n",req->host,req->port);
+                exit(0);
+            }
+
         } else if(strcmp(tok,"Proxy-Connection:")==0){ // If our token is Proxy-Conn
             // We don't need to do anything we are always sending close for this
         } else if(strcmp(tok,"Connection:")==0){ // If our token is Connection
             // We don't need to do anything we are always sending close for this
-        }else if(strcmp(tok,"User-Agent:")==0){ // If our token is User-Agent
+        } else if(strcmp(tok,"User-Agent:")==0){ // If our token is User-Agent
             // We don't need to do anything we are always sending user_agent_hdr for this
         } else{ // Otherwise we have an extra
             // Add the extra to the extras array
@@ -198,7 +203,6 @@ void forward(request* req, int clientfd){
     sprintf(body,"%s %s %s\r\n",req->method,req->path,req->version);
     sprintf(body+strlen(body),"Host: %s",req->host);
     sprintf(body+strlen(body),":%s\r\n",req->port);
-    //sprintf(body+strlen(body),"User-Agent: %s", user_agent_hdr);
     sprintf(body+strlen(body),"%s", user_agent_hdr);
     sprintf(body+strlen(body),"Connection: %s\r\n", req->conn);
     sprintf(body+strlen(body),"Proxy-Connection: %s\r\n", req->proxyConn);
@@ -245,29 +249,35 @@ void forward(request* req, int clientfd){
     }
     printf("--------------------------------------------\n\n");
 
-    // Get the content length as a integer
-    len = atoi(contentLength);
+    if(strlen(contentLength) > 0){
+        // Get the content length as a integer
+        len = atoi(contentLength);
 
-    // While length is greater than 0, there is more data to
-    // forward to the client
-    while (len > 0){
-        // If the number of len is larger than maxline then fill body with
-        // data up to MAXLINE bytes. Otherwise we don't need MAXLINE bytes
-        // so just fill up to len bytes.
-        int readn = (len > MAXLINE) ? MAXLINE : len;
-        // If size is not equal to what we wanted to read there was some
-        // error so notify the user and exit this thread.
-        if ((size = Rio_readnb(&rio, body, readn)) != readn){
-            errorMsg("read from server error\n");
-            exit(0);
+        // While length is greater than 0, there is more data to
+        // forward to the client
+        while (len > 0){
+            // If the number of len is larger than maxline then fill body with
+            // data up to MAXLINE bytes. Otherwise we don't need MAXLINE bytes
+            // so just fill up to len bytes.
+            int readn = (len > MAXLINE) ? MAXLINE : len;
+            // If size is not equal to what we wanted to read there was some
+            // error so notify the user and exit this thread.
+            if ((size = Rio_readnb(&rio, body, readn)) != readn){
+                errorMsg("read from server error\n");
+                exit(0);
+            }
+
+            // Increment the total size by the amount of bytes we read
+            total_size += size;
+            // Write the body out to the client
+            Rio_writen(clientfd, body, size);
+            // Decrement len by the amount of bytes we read
+            len -= readn;
         }
-
-        // Increment the total size by the amount of bytes we read
-        total_size += size;
-        // Write the body out to the client
-        Rio_writen(clientfd, body, size);
-        // Decrement len by the amount of bytes we read
-        len -= readn;
+    } else{
+        while((size = Rio_readnb(&rio,body,sizeof(body))) != 0){
+            Rio_writen(clientfd,body,size);
+        }
     }
 
     // Done with the server so close the connection
