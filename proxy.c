@@ -140,7 +140,7 @@ void parse(rio_t* rio, int connfd, request* req){
             } else{
                 strcpy(req->method,method);
                 strcpy(req->version,"HTTP/1.0");
-                strcpy(req->path,(strrchr(path,'/')));
+                strcpy(req->path,strchr((strchr(path,'.')), '/'));
             }
     }
 
