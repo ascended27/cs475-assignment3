@@ -139,9 +139,12 @@ int parse(rio_t* rio, int connfd, request* req){
             } else{
                 strcpy(req->method,method);
                 strcpy(req->version,"HTTP/1.0");
-                if(isLocal(path)){
+                if(isLocal(path))
+                {
                     tok = strtok_r(path,":",&bufPtr);
+//                    strcpy(req->path, strchr(strchr(bufPtr,':'),'/'));
                     strcpy(req->path, strchr(strchr(bufPtr,':'),'/'));
+                    printf("PATH: %s", req->path);
                 } else {
                     strcpy(req->path,strchr((strchr(path,'.')), '/'));
                 }
