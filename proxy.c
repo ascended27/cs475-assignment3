@@ -162,7 +162,10 @@ void parse(rio_t* rio, int connfd, request* req){
             strcpy(tmp,req->host);
             tok = strtok_r(tmp,":",&bufPtr);
             strcpy(req->host,tok);
-            strcpy(req->port,bufPtr);
+            if(strlen(bufPtr)==0)
+                strcpy(req->port,"80");
+            else
+                strcpy(req->port,bufPtr);
         } else if(strcmp(tok,"Proxy-Connection:")==0){ // If our token is Proxy-Conn
             // We don't need to do anything we are always sending close for this
         } else if(strcmp(tok,"Connection:")==0){ // If our token is Connection
@@ -194,10 +197,7 @@ void forward(request* req, int clientfd){
     // Build msg body
     sprintf(body,"%s %s %s\r\n",req->method,req->path,req->version);
     sprintf(body+strlen(body),"Host: %s",req->host);
-    if(strlen(req->port)==0)
-        sprintf(body+strlen(body),":80\r\n");
-    else
-        sprintf(body+strlen(body),":%s\r\n",req->port);
+    sprintf(body+strlen(body),":%s\r\n",req->port);
     //sprintf(body+strlen(body),"User-Agent: %s", user_agent_hdr);
     sprintf(body+strlen(body),"%s", user_agent_hdr);
     sprintf(body+strlen(body),"Connection: %s\r\n", req->conn);
@@ -223,7 +223,9 @@ void forward(request* req, int clientfd){
         // Extract content type and length
         strcpy(tmp,buf);
         tok = strtok_r(tmp," ",&tmpPtr);
-        if(strcmp(tok,"Content-length:")==0){
+        // For some reason tiny uses 'Content-length' as opposed to 'Content-Length'
+        // which is what the real sites use.
+        if(strcmp(tok,"Content-Length:")==0 || strcmp(tok,"Content-length:")==0){
             strcpy(contentLength,tmpPtr);
             contentLength[strlen(contentLength)-2]='\0';
         }
