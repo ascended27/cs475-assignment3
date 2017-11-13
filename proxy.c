@@ -28,6 +28,7 @@ int parse(rio_t*,int, request*);
 void forward(request*,int);
 void* thread(void* argv);
 void errorMsg(char* error);
+int isLocal(char* path);
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -138,7 +139,12 @@ int parse(rio_t* rio, int connfd, request* req){
             } else{
                 strcpy(req->method,method);
                 strcpy(req->version,"HTTP/1.0");
-                strcpy(req->path,strchr((strchr(path,'.')), '/'));
+                if(isLocal(path)){
+                    tok = strtok_r(path,":",&bufPtr);
+                    strcpy(req->path, strchr(strchr(bufPtr,':'),'/'));
+                } else {
+                    strcpy(req->path,strchr((strchr(path,'.')), '/'));
+                }
             }
     }
 
@@ -279,6 +285,10 @@ void forward(request* req, int clientfd){
         }
     } else{
         while((size = Rio_readnb(&rio,body,sizeof(body))) != 0){
+            // read failed
+            if(size == -1){
+
+            }
             Rio_writen(clientfd,body,size);
         }
     }
@@ -288,6 +298,24 @@ void forward(request* req, int clientfd){
 }
 
 void errorMsg(char* error){
-    //TODO:  print out error to client
     //TODO:  print out error to stderr to keep track in server
+//    printf("Error: %d - %s" );
+    //TODO:  print out error to client
+}
+
+int isLocal(char* path){
+    char* tok;
+    int i,len;
+    char pathCopy[strlen(path)+1];
+    strcpy(pathCopy,path);
+    tok = strtok(pathCopy,"/");
+    len = strlen(tok);
+    for(i=0;i<len;i++){
+        if(*tok=='.')
+            return 0;
+        else
+            tok++;
+    }
+    return 1;
+
 }
