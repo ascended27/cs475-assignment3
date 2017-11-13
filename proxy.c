@@ -27,14 +27,16 @@ typedef struct _threadArgs{
 int parse(rio_t*,int, request*);
 void forward(request*,int);
 void* thread(void* argv);
-void errorMsg(char* error);
+void errorMsg(char* error,int, int, rio_t*);
+void serverError(int, rio_t*);
 int isLocal(char* path);
+int hasPort(char* path);
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
 void sigpipe_handler(int sig){
-    printf("SIGPIPE received and ignored");
+    printf("SIGPIPE received and ignored\n");
     return;
 }
 
@@ -135,18 +137,29 @@ int parse(rio_t* rio, int connfd, request* req){
             sscanf(buf,"%s %s %s",method,path,version);
             if(strcasecmp(method,"GET")){
                 // TODO: Make this respond to user with error 501
-                errorMsg("Error only support method: GET\n");
+                errorMsg("Only support method: GET",501,connfd,rio);
             } else{
                 strcpy(req->method,method);
                 strcpy(req->version,"HTTP/1.0");
-                if(isLocal(path))
-                {
-                    tok = strtok_r(path,":",&bufPtr);
-//                    strcpy(req->path, strchr(strchr(bufPtr,':'),'/'));
-                    strcpy(req->path, strchr(strchr(bufPtr,':'),'/'));
-                    printf("PATH: %s", req->path);
+
+                tok = strtok_r(path,"/",&bufPtr);
+                if(strcmp(tok,"http:")==0)
+                    bufPtr++;
+                if(isLocal(bufPtr)){
+                    if(hasPort(bufPtr)){
+                        tok = strtok_r(bufPtr,":",&bufPtr);
+                        strcpy(req->path, strchr(bufPtr,'/'));
+                    } else {
+                        tok = strtok_r(bufPtr,"/",&bufPtr);
+                        if(strcmp(bufPtr,"")==0)
+                            strcpy(req->path,"/");
+                        else{
+                            strcat(req->path,"/");
+                            strcpy(req->path+strlen(req->path), bufPtr);
+                        }
+                    }
                 } else {
-                    strcpy(req->path,strchr((strchr(path,'.')), '/'));
+                    strcpy(req->path,strchr((strchr(bufPtr,'.')), '/'));
                 }
             }
     }
@@ -275,7 +288,7 @@ void forward(request* req, int clientfd){
             // If size is not equal to what we wanted to read there was some
             // error so notify the user and exit this thread.
             if ((size = Rio_readnb(&rio, body, readn)) != readn){
-                errorMsg("read from server error\n");
+//                errorMsg("read from server error\n");
                 exit(0);
             }
 
@@ -300,10 +313,15 @@ void forward(request* req, int clientfd){
     Close(serverfd);
 }
 
-void errorMsg(char* error){
+void errorMsg(char* error, int errorCode, int fd, rio_t* rio){
     //TODO:  print out error to stderr to keep track in server
-//    printf("Error: %d - %s" );
+    printf("Error: %s", error);
     //TODO:  print out error to client
+    char body[MAXBUF];
+    sprintf(body,"<html>\r\n");
+    sprintf(body+strlen(body),"<head><title>Proxy Error</title><head>\r\n");
+    sprintf(body+strlen(body),"<body bgcolor='ffffff'>%d: %s</body></html>\r\n\r\n",errorCode,error);
+    Rio_writen(fd,body,strlen(body));
 }
 
 int isLocal(char* path){
@@ -320,5 +338,20 @@ int isLocal(char* path){
             tok++;
     }
     return 1;
+}
 
+int hasPort(char* path){
+    char* tok;
+    int i,len;
+    char pathCopy[strlen(path)+1];
+    strcpy(pathCopy,path);
+    tok = strtok(pathCopy,"/");
+    len = strlen(tok);
+    for(i=0;i<len;i++){
+      if(*tok==':')
+          return 1;
+      else
+          tok++;
+    }
+    return 0;
 }
