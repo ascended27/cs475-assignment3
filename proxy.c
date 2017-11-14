@@ -1,3 +1,11 @@
+/*********************************************
+*
+* Authors: Matthew Rodgers G00847854
+*          Jimmy D. Bodden Pineda G00931220
+*
+*********************************************/
+
+
 #include <stdio.h>
 #include <string.h>
 #include "csapp.h"
