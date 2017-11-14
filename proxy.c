@@ -270,12 +270,14 @@ void forward(request* req, int clientfd){
     } else{
         Rio_readinitb(&rio,serverfd);
 
-        if(rio_writen(serverfd,body,strlen(body))<0){
-            rio_t clientRio;
-            Rio_readinitb(&clientRio,clientfd);
-            char msg[200];
-            sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
-            errorMsg(msg, clientfd, &clientRio);
+        if((n = rio_writen(serverfd,body,strlen(body)))<0){
+            if(n != -1){
+                rio_t clientRio;
+                Rio_readinitb(&clientRio,clientfd);
+                char msg[200];
+                sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
+                errorMsg(msg, clientfd, &clientRio);
+            }
         } else {
 
             printf("Forward Response\n");
@@ -294,18 +296,14 @@ void forward(request* req, int clientfd){
                 // Write buffer out to stdout and to the client
                 if(strcmp(buf,"\r\n")!=0)
                     printf("%s",buf);
-                if(rio_writen(clientfd,buf,strlen(buf))<0){
-                    rio_t clientRio;
-                    Rio_readinitb(&clientRio,clientfd);
-                    char msg[200];
-                    sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
-                    errorMsg(msg, clientfd, &clientRio);
-                } else{
-                    // If the buffer is '\r\n' then we are done reading headers
-                    if(strcmp(buf,"\r\n")==0){
+                n = rio_writen(clientfd,buf,strlen(buf));
+                if(n==-1)
+                    break;
+
+                if(strcmp(buf,"\r\n")==0){
                         break;
-                    }
                 }
+
                 // Clear the buffer after each header line
                 memset(buf,0,sizeof(buf));
 
@@ -337,7 +335,9 @@ void forward(request* req, int clientfd){
                         // Increment the total size by the amount of bytes we read
                         total_size += size;
                         // Write the body out to the client
-                        if(rio_writen(clientfd, body, size)<0){
+                        if((n=rio_writen(clientfd, body, size))<0){
+                            if(n == -1)
+                                break;
                             rio_t clientRio;
                             Rio_readinitb(&clientRio,clientfd);
                             char msg[200];
@@ -355,21 +355,19 @@ void forward(request* req, int clientfd){
                         Rio_readinitb(&clientRio,clientfd);
                         char msg[200];
                         sprintf(msg, "%d %s\n", errno, strerror(errno));
-                        errorMsg(msg, clientfd, &clientRio);                    }
-                    if(rio_writen(clientfd,body,size)<0){
-                        rio_t clientRio;
-                        Rio_readinitb(&clientRio,clientfd);
-                        char msg[200];
-                        sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
                         errorMsg(msg, clientfd, &clientRio);
                     }
+
+                    n = rio_writen(clientfd,body,size);
+
+                    if(n == 1)
+                        break;
                 }
             }
-
-            // Done with the server so close the connection
-            if(close(serverfd)<0){
-                printf("Server Error: %d %s", errno, strerror(errno));
-            }
+        }
+        // Done with the server so close the connection
+        if(close(serverfd)<0){
+            printf("Server Error: %d %s", errno, strerror(errno));
         }
     }
 }
