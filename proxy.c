@@ -11,10 +11,6 @@
 #include "csapp.h"
 #include "list.h"
 
-/* Recommended max cache and object sizes */
-
-#define MAX_OBJECT_SIZE 102400
-
 // TODO: Address errno being 0. Make sure that you're using
 // TODO: it in the right places. Check csapp.c cor places that set it.
 
