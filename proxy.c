@@ -30,7 +30,7 @@ typedef struct _threadArgs{
 int parse(rio_t*,int, request*);
 void forward(request*,int);
 void* thread(void* argv);
-void errorMsg(char* error,int, int, rio_t*);
+void errorMsg(char* error, int, rio_t*);
 void serverError(int, rio_t*);
 int isLocal(char* path);
 int hasPort(char* path);
@@ -80,7 +80,7 @@ int main(int argc, char** argv)
                 } else{
                     rio_t rio;
                     Rio_readinitb(&rio,connfd);
-                    errorMsg("Server Error", 500, connfd, &rio);
+                    errorMsg("Server Error: 500", connfd, &rio);
                 }
             }
 
@@ -128,7 +128,7 @@ void* thread(void* argv){
             forward(req,fd);
         }
     } else{
-        errorMsg("Server Error", 500, fd, &rio);
+        errorMsg("Server Error", fd, &rio);
     }
     // Connection is done for now so just close it.
     if(Close(fd)<0){
@@ -149,7 +149,9 @@ int parse(rio_t* rio, int connfd, request* req){
     if((n=Rio_readlineb(rio,buf,MAXLINE)) != 0){
             sscanf(buf,"%s %s %s",method,path,version);
             if(strcasecmp(method,"GET")){
-                errorMsg("Only support method: GET",501,connfd,rio);
+                char msg[200];
+                sprintf(msg, "Server Error: %d %s\n", 501, "Supported methods: GET");
+                errorMsg(msg,connfd,rio);
             } else{
                 strcpy(req->method,method);
                 strcpy(req->version,"HTTP/1.0");
@@ -258,7 +260,7 @@ void forward(request* req, int clientfd){
         Rio_readinitb(&clientRio,clientfd);
         char msg[200];
         sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
-        errorMsg(msg, 500, clientfd, &clientRio);
+        errorMsg(msg, clientfd, &clientRio);
     } else{
         Rio_readinitb(&rio,serverfd);
 
@@ -267,7 +269,7 @@ void forward(request* req, int clientfd){
             Rio_readinitb(&clientRio,clientfd);
             char msg[200];
             sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
-            errorMsg(msg, 500, clientfd, &clientRio);
+            errorMsg(msg, clientfd, &clientRio);
         } else {
 
             printf("Forward Response\n");
@@ -291,7 +293,7 @@ void forward(request* req, int clientfd){
                     Rio_readinitb(&clientRio,clientfd);
                     char msg[200];
                     sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
-                    errorMsg(msg, 500, clientfd, &clientRio);
+                    errorMsg(msg, clientfd, &clientRio);
                 } else{
                     // If the buffer is '\r\n' then we are done reading headers
                     if(strcmp(buf,"\r\n")==0){
@@ -319,21 +321,25 @@ void forward(request* req, int clientfd){
                     // If size is not equal to what we wanted to read there was some
                     // error so notify the user and exit this thread.
                     if ((size = Rio_readnb(&rio, body, readn)) != readn){
-        //                errorMsg("read from server error\n");
-                        exit(0);
-                    }
-
-                    // Increment the total size by the amount of bytes we read
-                    total_size += size;
-                    // Write the body out to the client
-                    if(rio_writen(clientfd, body, size)<0){
-                        rio_t clientRio;
+                     rio_t clientRio;
                         Rio_readinitb(&clientRio,clientfd);
                         char msg[200];
                         sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
-                        errorMsg(msg, 500, clientfd, &clientRio);                    }
-                    // Decrement len by the amount of bytes we read
-                    len -= readn;
+                        errorMsg(msg, clientfd, &clientRio);
+                        break;
+                    } else {
+                        // Increment the total size by the amount of bytes we read
+                        total_size += size;
+                        // Write the body out to the client
+                        if(rio_writen(clientfd, body, size)<0){
+                            rio_t clientRio;
+                            Rio_readinitb(&clientRio,clientfd);
+                            char msg[200];
+                            sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
+                            errorMsg(msg, clientfd, &clientRio);                    }
+                        // Decrement len by the amount of bytes we read
+                        len -= readn;
+                    }
                 }
             } else{
                 while((size = Rio_readnb(&rio,body,sizeof(body))) != 0){
@@ -342,14 +348,14 @@ void forward(request* req, int clientfd){
                         rio_t clientRio;
                         Rio_readinitb(&clientRio,clientfd);
                         char msg[200];
-                        sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
-                        errorMsg(msg, 500, clientfd, &clientRio);                    }
+                        sprintf(msg, "%d %s\n", errno, strerror(errno));
+                        errorMsg(msg, clientfd, &clientRio);                    }
                     if(rio_writen(clientfd,body,size)<0){
                         rio_t clientRio;
                         Rio_readinitb(&clientRio,clientfd);
                         char msg[200];
                         sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
-                        errorMsg(msg, 500, clientfd, &clientRio);
+                        errorMsg(msg, clientfd, &clientRio);
                     }
                 }
             }
@@ -362,7 +368,7 @@ void forward(request* req, int clientfd){
     }
 }
 
-void errorMsg(char* error, int errorCode, int fd, rio_t* rio){
+void errorMsg(char* error, int fd, rio_t* rio){
     printf("Error: %s\n", error);
 
     char header[MAXBUF];
@@ -371,9 +377,9 @@ void errorMsg(char* error, int errorCode, int fd, rio_t* rio){
 
     sprintf(body+strlen(body),"<html>\r\n");
     sprintf(body+strlen(body),"<head><title>Proxy Error</title><head>\r\n");
-    sprintf(body+strlen(body),"<body bgcolor='ffffff'>%d: %s</body></html>\r\n\r\n",errorCode,error);
+    sprintf(body+strlen(body),"<body bgcolor='ffffff'>%s</body></html>\r\n\r\n",error);
 
-    sprintf(header,"HTTP/1.0 %d\r\n", errorCode);
+    sprintf(header,"HTTP/1.0 500\r\n");
     sprintf(header+strlen(header),"Content-Type: text/html; charset=iso-8859-1\r\n");
     sprintf(header+strlen(header),"Content-Length: %d\r\n", (int) strlen(body));
     sprintf(header+strlen(header),"Connection: close\r\n");
