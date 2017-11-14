@@ -1,7 +1,7 @@
 /*********************************************
 *
-* Authors: Matthew Rodgers G00847854
-*          Jimmy D. Bodden Pineda G00931220
+* Authors: 	Matthew Rodgers 					G00847854
+*         			 Jimmy D. Bodden Pineda 	G00931220
 *
 *********************************************/
 
