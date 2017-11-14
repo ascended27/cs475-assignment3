@@ -6,6 +6,9 @@
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 
+// TODO: Address errno being 0. Make sure that you're using
+// TODO: it in the right places. Check csapp.c cor places that set it.
+
 typedef struct _request{
     char method[16];
     char path[MAXLINE];
@@ -53,31 +56,37 @@ int main(int argc, char** argv)
     // If we have a port passed in continue
     if(argc == 2){
         // Open socket to listen on
-        listenfd = Open_listenfd(argv[1]);
+        if((listenfd = open_listenfd(argv[1]))<0){
+            printf("Server Error: %d %s", errno, strerror(errno));
+        } else {
+            // Notify user that proxy is running
+            printf("Proxy running on port: %s\n", argv[1]);
 
-        // Notify user that proxy is running
-        printf("Proxy running on port: %s\n", argv[1]);
+            // Listen loop
+            while(1){
+                // Create a socket to read from
+                clientlen = sizeof(clientAddr);
 
-        // Listen loop
-        while(1){
-            // Create a socket to read from
-            clientlen = sizeof(clientAddr);
+                // Initialize thread args to pass to the new thread
+                threadArgs* args = (threadArgs*) malloc(sizeof(threadArgs));
+                // Block until we get a connection
+                connfd = Accept(listenfd, (SA *)(&(args->sock)), &clientlen);
+                if(args!= NULL){
 
-            // Initialize thread args to pass to the new thread
-            threadArgs* args = (threadArgs*) malloc(sizeof(threadArgs));
+                    // Add the new socket to the thread args and create a new thread
+                    // to handle the connection
+                    args->fd = connfd;
+                    Pthread_create(&tid,NULL,thread,(void *) args);
+                } else{
+                    rio_t rio;
+                    Rio_readinitb(&rio,connfd);
+                    errorMsg("Server Error", 500, connfd, &rio);
+                }
+            }
 
-            // Block until we get a connection
-            connfd = Accept(listenfd, (SA *)(&(args->sock)), &clientlen);
-
-            // Add the new socket to the thread args and create a new thread
-            // to handle the connection
-            args->fd = connfd;
-            Pthread_create(&tid,NULL,thread,(void *) args);
+            exit(0);
         }
-
-        exit(0);
     }
-
     return 0;
 }
 
@@ -107,20 +116,24 @@ void* thread(void* argv){
 
     // Request structure to store all the request info
     request* req = malloc(sizeof(request));
+    if(req != NULL){
+        // Connection & Proxy-Connection always need to be close
+        strcpy(req->conn,"close");
+        strcpy(req->proxyConn,"close");
+        req->extraCount=0;
 
-    // Connection & Proxy-Connection always need to be close
-    strcpy(req->conn,"close");
-    strcpy(req->proxyConn,"close");
-    req->extraCount=0;
-
-    // Parse the request then forward it to the server, then return
-    // the server's response to the client
-    if(parse(&rio,fd,req)==1){
-        forward(req,fd);
+        // Parse the request then forward it to the server, then return
+        // the server's response to the client
+        if(parse(&rio,fd,req)==1){
+            forward(req,fd);
+        }
+    } else{
+        errorMsg("Server Error", 500, fd, &rio);
     }
-
     // Connection is done for now so just close it.
-    Close(fd);
+    if(Close(fd)<0){
+        printf("Server Error: %d %s", errno, strerror(errno));
+    }
     return NULL;
 }
 
@@ -136,7 +149,6 @@ int parse(rio_t* rio, int connfd, request* req){
     if((n=Rio_readlineb(rio,buf,MAXLINE)) != 0){
             sscanf(buf,"%s %s %s",method,path,version);
             if(strcasecmp(method,"GET")){
-                // TODO: Make this respond to user with error 501
                 errorMsg("Only support method: GET",501,connfd,rio);
             } else{
                 strcpy(req->method,method);
@@ -240,87 +252,137 @@ void forward(request* req, int clientfd){
     printf("%s",body);
     printf("--------------------------------------------\n");
 
-    int serverfd = Open_clientfd(req->host, req->port);
-    Rio_readinitb(&rio,serverfd);
-
-    Rio_writen(serverfd,body,strlen(body));
-
-    printf("Forward Response\n");
-    while((n=Rio_readlineb(&rio,buf,MAXLINE)) != 0){
-
-        // Extract content type and length
-        strcpy(tmp,buf);
-        tok = strtok_r(tmp," ",&tmpPtr);
-        // For some reason tiny uses 'Content-length' as opposed to 'Content-Length'
-        // which is what the real sites use.
-        if(strcmp(tok,"Content-Length:")==0 || strcmp(tok,"Content-length:")==0){
-            strcpy(contentLength,tmpPtr);
-            contentLength[strlen(contentLength)-2]='\0';
-        }
-
-        // Write buffer out to stdout and to the client
-        if(strcmp(buf,"\r\n")!=0)
-            printf("%s",buf);
-        Rio_writen(clientfd,buf,strlen(buf));
-
-        // If the buffer is '\r\n' then we are done reading headers
-        if(strcmp(buf,"\r\n")==0){
-            break;
-        }
-
-        // Clear the buffer after each header line
-        memset(buf,0,sizeof(buf));
-    }
-    printf("--------------------------------------------\n\n");
-
-    if(strlen(contentLength) > 0){
-        // Get the content length as a integer
-        len = atoi(contentLength);
-
-        // While length is greater than 0, there is more data to
-        // forward to the client
-        while (len > 0){
-            // If the number of len is larger than maxline then fill body with
-            // data up to MAXLINE bytes. Otherwise we don't need MAXLINE bytes
-            // so just fill up to len bytes.
-            int readn = (len > MAXLINE) ? MAXLINE : len;
-            // If size is not equal to what we wanted to read there was some
-            // error so notify the user and exit this thread.
-            if ((size = Rio_readnb(&rio, body, readn)) != readn){
-//                errorMsg("read from server error\n");
-                exit(0);
-            }
-
-            // Increment the total size by the amount of bytes we read
-            total_size += size;
-            // Write the body out to the client
-            Rio_writen(clientfd, body, size);
-            // Decrement len by the amount of bytes we read
-            len -= readn;
-        }
+    int serverfd;
+    if((serverfd = open_clientfd(req->host, req->port))<0){
+        rio_t clientRio;
+        Rio_readinitb(&clientRio,clientfd);
+        char msg[200];
+        sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
+        errorMsg(msg, 500, clientfd, &clientRio);
     } else{
-        while((size = Rio_readnb(&rio,body,sizeof(body))) != 0){
-            // read failed
-            if(size == -1){
+        Rio_readinitb(&rio,serverfd);
+
+        if(rio_writen(serverfd,body,strlen(body))<0){
+            rio_t clientRio;
+            Rio_readinitb(&clientRio,clientfd);
+            char msg[200];
+            sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
+            errorMsg(msg, 500, clientfd, &clientRio);
+        } else {
+
+            printf("Forward Response\n");
+            while((n=Rio_readlineb(&rio,buf,MAXLINE)) != 0){
+
+                // Extract content type and length
+                strcpy(tmp,buf);
+                tok = strtok_r(tmp," ",&tmpPtr);
+                // For some reason tiny uses 'Content-length' as opposed to 'Content-Length'
+                // which is what the real sites use.
+                if(strcmp(tok,"Content-Length:")==0 || strcmp(tok,"Content-length:")==0){
+                    strcpy(contentLength,tmpPtr);
+                    contentLength[strlen(contentLength)-2]='\0';
+                }
+
+                // Write buffer out to stdout and to the client
+                if(strcmp(buf,"\r\n")!=0)
+                    printf("%s",buf);
+                if(rio_writen(clientfd,buf,strlen(buf))<0){
+                    rio_t clientRio;
+                    Rio_readinitb(&clientRio,clientfd);
+                    char msg[200];
+                    sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
+                    errorMsg(msg, 500, clientfd, &clientRio);
+                } else{
+                    // If the buffer is '\r\n' then we are done reading headers
+                    if(strcmp(buf,"\r\n")==0){
+                        break;
+                    }
+                }
+                // Clear the buffer after each header line
+                memset(buf,0,sizeof(buf));
 
             }
-            Rio_writen(clientfd,body,size);
+
+            printf("--------------------------------------------\n\n");
+
+            if(strlen(contentLength) > 0){
+                // Get the content length as a integer
+                len = atoi(contentLength);
+
+                // While length is greater than 0, there is more data to
+                // forward to the client
+                while (len > 0){
+                    // If the number of len is larger than maxline then fill body with
+                    // data up to MAXLINE bytes. Otherwise we don't need MAXLINE bytes
+                    // so just fill up to len bytes.
+                    int readn = (len > MAXLINE) ? MAXLINE : len;
+                    // If size is not equal to what we wanted to read there was some
+                    // error so notify the user and exit this thread.
+                    if ((size = Rio_readnb(&rio, body, readn)) != readn){
+        //                errorMsg("read from server error\n");
+                        exit(0);
+                    }
+
+                    // Increment the total size by the amount of bytes we read
+                    total_size += size;
+                    // Write the body out to the client
+                    if(rio_writen(clientfd, body, size)<0){
+                        rio_t clientRio;
+                        Rio_readinitb(&clientRio,clientfd);
+                        char msg[200];
+                        sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
+                        errorMsg(msg, 500, clientfd, &clientRio);                    }
+                    // Decrement len by the amount of bytes we read
+                    len -= readn;
+                }
+            } else{
+                while((size = Rio_readnb(&rio,body,sizeof(body))) != 0){
+                    // read failed
+                    if(size == -1){
+                        rio_t clientRio;
+                        Rio_readinitb(&clientRio,clientfd);
+                        char msg[200];
+                        sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
+                        errorMsg(msg, 500, clientfd, &clientRio);                    }
+                    if(rio_writen(clientfd,body,size)<0){
+                        rio_t clientRio;
+                        Rio_readinitb(&clientRio,clientfd);
+                        char msg[200];
+                        sprintf(msg, "Server Error: %d %s\n", errno, strerror(errno));
+                        errorMsg(msg, 500, clientfd, &clientRio);
+                    }
+                }
+            }
+
+            // Done with the server so close the connection
+            if(close(serverfd)<0){
+                printf("Server Error: %d %s", errno, strerror(errno));
+            }
         }
     }
-
-    // Done with the server so close the connection
-    Close(serverfd);
 }
 
 void errorMsg(char* error, int errorCode, int fd, rio_t* rio){
-    //TODO:  print out error to stderr to keep track in server
-    printf("Error: %s", error);
-    //TODO:  print out error to client
+    printf("Error: %s\n", error);
+
+    char header[MAXBUF];
     char body[MAXBUF];
-    sprintf(body,"<html>\r\n");
+    char res[MAXBUF];
+
+    sprintf(body+strlen(body),"<html>\r\n");
     sprintf(body+strlen(body),"<head><title>Proxy Error</title><head>\r\n");
     sprintf(body+strlen(body),"<body bgcolor='ffffff'>%d: %s</body></html>\r\n\r\n",errorCode,error);
-    Rio_writen(fd,body,strlen(body));
+
+    sprintf(header,"HTTP/1.0 %d\r\n", errorCode);
+    sprintf(header+strlen(header),"Content-Type: text/html; charset=iso-8859-1\r\n");
+    sprintf(header+strlen(header),"Content-Length: %d\r\n", (int) strlen(body));
+    sprintf(header+strlen(header),"Connection: close\r\n");
+    sprintf(header+strlen(header),"\r\n");
+
+    sprintf(res,"%s",header);
+    sprintf(res+strlen(res),"%s",body);
+
+    rio_writen(fd,res,strlen(res));
 }
 
 int isLocal(char* path){

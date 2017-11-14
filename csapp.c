@@ -29,7 +29,7 @@
 void unix_error(char *msg) /* Unix-style error */
 {
     fprintf(stderr, "%s: %s\n", msg, strerror(errno));
-    exit(0);
+//    exit(0);
 }
 /* $end unixerror */
 
@@ -343,12 +343,10 @@ off_t Lseek(int fildes, off_t offset, int whence)
     return rc;
 }
 
-void Close(int fd) 
+int Close(int fd)
 {
-    int rc;
-
-    if ((rc = close(fd)) < 0)
-	unix_error("Close error");
+    int rc = close(fd);
+	return rc;
 }
 
 int Select(int  n, fd_set *readfds, fd_set *writefds,
