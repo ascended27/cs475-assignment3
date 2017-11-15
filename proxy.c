@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "csapp.h"
-#include "./list/list.h"
+#include "list.h"
 
 // TODO: Address errno being 0. Make sure that you're using
 // TODO: it in the right places. Check csapp.c cor places that set it.
