@@ -43,6 +43,18 @@ int hasPort(char* path);
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
+//Shared Cache=========================
+
+//Initialize size of cache
+int cacheSize;
+
+//Create the cache list
+node_ptr cache;
+
+//Shared Cache=========================
+
+
+
 void sigpipe_handler(int sig){
     printf("SIGPIPE received and ignored\n");
     return;
@@ -50,6 +62,11 @@ void sigpipe_handler(int sig){
 
 int main(int argc, char** argv)
 {
+    //init cache
+    cache = makeSingleList();
+    cacheSize = 0;
+
+
     int listenfd,connfd;
     socklen_t clientlen;
     struct sockaddr_in clientAddr;
@@ -130,7 +147,22 @@ void* thread(void* argv){
         // Parse the request then forward it to the server, then return
         // the server's response to the client
         if(parse(&rio,fd,req)==1){
-            forward(req,fd);
+
+            //Check to see if the request has been done before
+            //selectNode will look for the node that has the same
+            //method as the one from the current request.
+            //Returns NULL if there were no previous requests
+            node_ptr theNode;
+            theNode = selectNodeByPath(req->method, cache);
+
+            if(theNode)
+			{
+				//This
+			}
+			else
+			{
+				forward(req,fd);
+			}
         }
     } else{
         errorMsg("Server Error", fd, &rio);

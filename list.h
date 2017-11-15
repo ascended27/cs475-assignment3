@@ -21,12 +21,10 @@ node_ptr makeNode(char* path, char* data, int size, int countUses, node_ptr prev
 void deleteList(node_ptr start);
 node_ptr freeNode(node_ptr node);
 node_ptr removeNode(node_ptr node, node_ptr list);
+node_ptr selectNodeByPath(char* path, node_ptr list);
 int insertNode(node_ptr nNode, node_ptr dummy);
 int isEmpty(node_ptr list);
 node_ptr makeSingleList();
-
-//cache methods
-char* serveData(char* URL, node_ptr list);
 
 //Special removes
 node_ptr removeByPath(char* path, node_ptr list);
