@@ -162,6 +162,11 @@ int main(int argc, char **argv) {
             exit(0);
         }
     }
+	
+	//Delete List
+	if(cache)
+		deleteList(cache);
+
     return 0;
 }
 
@@ -229,7 +234,7 @@ void *thread(void *argv) {
 
                 // Print the request
                 printf("--------------------------------------------\n");
-                printf("Forward Request\n");
+                printf("Fetching Cached Request\n");
                 printf("%s", body);
                 printf("--------------------------------------------\n");
 
