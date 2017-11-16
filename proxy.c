@@ -213,7 +213,7 @@ void *thread(void *argv) {
             node_ptr theNode;
 
             //ADD SOME KIND OF SYNCHRONIZATION HERE
-            theNode = selectNodeByPath(req->host, req->path, cache);
+            theNode = selectNodeByPath(req->port, req->host, req->path, cache);
             //END SOME KIND OF SYNCHRONIZATION HERE
 
             if (theNode) {
@@ -356,7 +356,7 @@ int parse(rio_t *rio, int connfd, request *req) {
 void forward(request *req, int clientfd) {
 
     //Make node that will be put into cache
-    node_ptr node = makeNode(req->host, req->path, NULL, 0, 1, NULL, NULL);
+    node_ptr node = makeNode(req->port, req->host, req->path, NULL, 0, 1, NULL, NULL);
 
     rio_t rio;
     int i, n, size, len;

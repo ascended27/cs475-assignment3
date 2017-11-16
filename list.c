@@ -6,8 +6,8 @@
 
 node_ptr makeSingleList()
 {
-    node_ptr start = makeNode(NULL, NULL, NULL, -1,  -1, NULL, NULL);
-    node_ptr end = makeNode(NULL, NULL, NULL, -1,  -1, NULL, NULL);
+    node_ptr start = makeNode(NULL, NULL, NULL, NULL, -1,  -1, NULL, NULL);
+    node_ptr end = makeNode(NULL, NULL, NULL, NULL, -1,  -1, NULL, NULL);
 
     start->next = end;
     end->previous = start;
@@ -102,14 +102,14 @@ int nodesEqual(node_ptr node1, node_ptr node2)
     if(node1 == NULL || node2 == NULL)
         return 0;
 
-    return strcmp(node1->path, node2->path) == 0 && strcmp(node1->host, node2->host) == 0;
+    return strcmp(node1->port, node2->port) == 0 && strcmp(node1->path, node2->path) == 0 && strcmp(node1->host, node2->host) == 0;
 }
 
-node_ptr selectNodeByPath(char* host, char* path, node_ptr list)
+node_ptr selectNodeByPath(char* port, char* host, char* path, node_ptr list)
 {
     node_ptr current = list->next;
 
-    while(current && !(strcmp(current->host, host)==0 && strcmp(current->path, path)==0))
+    while(current && !(strcmp(current->port, port)==0 && strcmp(current->host, host)==0 && strcmp(current->path, path)==0))
     {
         current = current->next;
     }
@@ -124,9 +124,9 @@ node_ptr selectNodeByPath(char* host, char* path, node_ptr list)
 }
 
 //Function to remove a node from a set by searching by path, will reconnect list under the hood
-node_ptr removeByPath(char* host, char* path, node_ptr list)
+node_ptr removeByPath(char* port, char* host, char* path, node_ptr list)
 {
-	node_ptr node = selectNodeByPath(host, path, list);
+	node_ptr node = selectNodeByPath(port, host, path, list);
 	//printf("My value now: %s", node->path);
 
 	return removeNode(node, list);
@@ -210,7 +210,7 @@ int insertNode(node_ptr nNode, node_ptr dummy)
 }
 
 //helper function used to instantiates the nodes' fields
-node_ptr makeNode(char* host, char* path, char* data, int size, int countUses, node_ptr prev, node_ptr next)
+node_ptr makeNode(char* port, char* host, char* path, char* data, int size, int countUses, node_ptr prev, node_ptr next)
 {
     node_ptr node = malloc(sizeof(node_rec));
 
@@ -240,8 +240,14 @@ node_ptr makeNode(char* host, char* path, char* data, int size, int countUses, n
 
 	if(host != NULL)
 	{
-		printf("HOST NOT NULL");
+		//printf("HOST NOT NULL");
     	strcpy(node->host, host);
+	}
+
+	if(port != NULL)
+	{
+		//printf("HOST NOT NULL");
+    	strcpy(node->port, port);
 	}
 
     node->size = size;
@@ -295,10 +301,10 @@ node_ptr freeNode(node_ptr node)
 	return node;
 }
 
-char* serveData(char* host, char* path, node_ptr list)
+char* serveData(char* port, char* host, char* path, node_ptr list)
 {
 	//fetch node containing object from given URL
-	node_ptr node = selectNodeByPath(host, path, list);
+	node_ptr node = selectNodeByPath(port, host, path, list);
 
 	//check if the node is null
 	if(node)
@@ -311,9 +317,9 @@ char* serveData(char* host, char* path, node_ptr list)
 }
 
 //Function that will search for node with given path and increment its countUses by one.
-void incrementCount(char* host, char* path, node_ptr list)
+void incrementCount(char* port, char* host, char* path, node_ptr list)
 {
-    node_ptr node = selectNodeByPath(host, path, list);
+    node_ptr node = selectNodeByPath(port, host, path, list);
 	//printf("path: %s", node->path);
 	if(node)
     	node->countUses++;
