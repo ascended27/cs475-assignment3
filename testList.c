@@ -15,20 +15,20 @@ int main(int argc, char**argv)
 
 	//incrementCount("http://localhost:2000/", list);
 
-	node_ptr n = removeByPath("80","localhost", "/tiny.c", list);
+	//node_ptr n = removeByPath("80","localhost", "/tiny.c", list);
 
-	if(n)
-		freeNode(n);
+	//if(n)
+	//	freeNode(n);
 
-	node_ptr n3 = removeByPath("80","localhost", "/csapp.h", list);
+	//node_ptr n3 = removeByPath("80","localhost", "/csapp.h", list);
 
-	if(n3)
-		freeNode(n3);
+	//if(n3)
+	//	freeNode(n3);
 
-	node_ptr n4 = removeByPath("80", "localhost", "/some.h", list);
+	//node_ptr n4 = removeByPath("80", "localhost", "/some.h", list);
 
-	if(n4)
-		freeNode(n4);
+	//if(n4)
+	//	freeNode(n4);
 
 	
 	traverseListRight(list);

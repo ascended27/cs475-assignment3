@@ -40,6 +40,11 @@ void traverseListLeft(node_ptr dummy)
 			else
 				printf("host: no host\n");
 
+			if(dummy->port)
+				printf("host: %s\n", dummy->port);
+			else
+				printf("port: no port\n");
+
 		//	printf("size: %s\n", dummy->data);
 			printf("size: %d\n", dummy->size);
 			printf("uses: %d\n", dummy->countUses);
@@ -79,6 +84,11 @@ node_ptr traverseListRight(node_ptr dummy)
 				printf("host: %s\n", dummy->host);
 			else
 				printf("host: no host\n");
+
+			if(dummy->port)
+				printf("host: %s\n", dummy->port);
+			else
+				printf("port: no port\n");
 
 		//	printf("size: %s\n", dummy->data);
 			printf("size: %d\n", dummy->size);
