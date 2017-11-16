@@ -6,8 +6,8 @@
 
 node_ptr makeSingleList()
 {
-    node_ptr start = makeNode(NULL, NULL, -1,  -1, NULL, NULL);
-    node_ptr end = makeNode(NULL, NULL, -1,  -1, NULL, NULL);
+    node_ptr start = makeNode(NULL, NULL, NULL, -1,  -1, NULL, NULL);
+    node_ptr end = makeNode(NULL, NULL, NULL, -1,  -1, NULL, NULL);
 
     start->next = end;
     end->previous = start;
@@ -35,6 +35,11 @@ void traverseListLeft(node_ptr dummy)
 			else
 				printf("path: no path\n");
 
+			if(dummy->host)
+				printf("host: %s\n", dummy->host);
+			else
+				printf("host: no host\n");
+
 		//	printf("size: %s\n", dummy->data);
 			printf("size: %d\n", dummy->size);
 			printf("uses: %d\n", dummy->countUses);
@@ -51,6 +56,7 @@ void traverseListLeft(node_ptr dummy)
 //used for debugging
 node_ptr traverseListRight(node_ptr dummy)
 {
+	printf("CALLING TRAVERSAL\n");
     node_ptr pointer;
 
     while(dummy)
@@ -69,7 +75,12 @@ node_ptr traverseListRight(node_ptr dummy)
 			else
 				printf("path: no path\n");
 
-//			printf("size: %s\n", dummy->data);
+			if(dummy->host)
+				printf("host: %s\n", dummy->host);
+			else
+				printf("host: no host\n");
+
+		//	printf("size: %s\n", dummy->data);
 			printf("size: %d\n", dummy->size);
 			printf("uses: %d\n", dummy->countUses);
 			printf("-------------------\n");
@@ -91,14 +102,14 @@ int nodesEqual(node_ptr node1, node_ptr node2)
     if(node1 == NULL || node2 == NULL)
         return 0;
 
-    return strcmp(node1->path, node2->path) == 0;
+    return strcmp(node1->path, node2->path) == 0 && strcmp(node1->host, node2->host) == 0;
 }
 
-node_ptr selectNodeByPath(char* path, node_ptr list)
+node_ptr selectNodeByPath(char* host, char* path, node_ptr list)
 {
     node_ptr current = list->next;
 
-    while(current && (strcmp(path, current->path) != 0))
+    while(current && !(strcmp(current->host, host)==0 && strcmp(current->path, path)==0))
     {
         current = current->next;
     }
@@ -113,9 +124,9 @@ node_ptr selectNodeByPath(char* path, node_ptr list)
 }
 
 //Function to remove a node from a set by searching by path, will reconnect list under the hood
-node_ptr removeByPath(char* path, node_ptr list)
+node_ptr removeByPath(char* host, char* path, node_ptr list)
 {
-	node_ptr node = selectNodeByPath(path, list);
+	node_ptr node = selectNodeByPath(host, path, list);
 	//printf("My value now: %s", node->path);
 
 	return removeNode(node, list);
@@ -165,12 +176,12 @@ node_ptr removeNode(node_ptr node, node_ptr list)
 //the nNode is inserted in address-order(lowest to highest)
 int insertNode(node_ptr nNode, node_ptr dummy)
 {
-	if(nNode->size > MAX_OBJECT_SIZE)
-		return 0;
-
-    //if parameters are null, exit
+	//if parameters are null, exit
     if(!nNode || !dummy)
         return 0;
+
+	if(nNode->size > MAX_OBJECT_SIZE)
+		return 0;
 
     //get dummy node and node after dummy node
     node_ptr current = dummy->next;
@@ -199,7 +210,7 @@ int insertNode(node_ptr nNode, node_ptr dummy)
 }
 
 //helper function used to instantiates the nodes' fields
-node_ptr makeNode(char* path, char* data, int size, int countUses, node_ptr prev, node_ptr next)
+node_ptr makeNode(char* host, char* path, char* data, int size, int countUses, node_ptr prev, node_ptr next)
 {
     node_ptr node = malloc(sizeof(node_rec));
 
@@ -215,11 +226,11 @@ node_ptr makeNode(char* path, char* data, int size, int countUses, node_ptr prev
 		node->data[i] = '\0';
 	}
 
-    if(!node->data)
-    {
-        printf("Allocation of node failed. Exiting program...\n");
-        exit(1);
-    }
+    //if(!node->data)
+    //{
+      //  printf("Allocation of node failed. Exiting program...\n");
+        //exit(1);
+    //}
 
 
 	if(path != NULL)
@@ -227,8 +238,14 @@ node_ptr makeNode(char* path, char* data, int size, int countUses, node_ptr prev
     	strcpy(node->path, path);
 	}
 
+	if(host != NULL)
+	{
+		printf("HOST NOT NULL");
+    	strcpy(node->host, host);
+	}
+
     node->size = size;
-    node->countUses = 0;
+    node->countUses = countUses;
 
 	if(data != NULL)
 	{
@@ -278,10 +295,10 @@ node_ptr freeNode(node_ptr node)
 	return node;
 }
 
-char* serveData(char* URL, node_ptr list)
+char* serveData(char* host, char* path, node_ptr list)
 {
 	//fetch node containing object from given URL
-	node_ptr node = selectNodeByPath(URL, list);
+	node_ptr node = selectNodeByPath(host, path, list);
 
 	//check if the node is null
 	if(node)
@@ -294,12 +311,17 @@ char* serveData(char* URL, node_ptr list)
 }
 
 //Function that will search for node with given path and increment its countUses by one.
-void incrementCount(char* path, node_ptr list)
+void incrementCount(char* host, char* path, node_ptr list)
 {
-    node_ptr node = selectNodeByPath(path, list);
+    node_ptr node = selectNodeByPath(host, path, list);
 	//printf("path: %s", node->path);
 	if(node)
     	node->countUses++;
+}
+
+void incrementCountForNode(node_ptr node)
+{
+	node->countUses++;
 }
 
 int isEmpty(node_ptr list)
