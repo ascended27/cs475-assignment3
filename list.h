@@ -32,6 +32,9 @@ node_ptr makeSingleList();
 //Special removes
 node_ptr removeByPath(char* port, char* host, char* path, node_ptr list);
 
+node_ptr removeByLRU(node_ptr list);
+node_ptr selectNodeWithLeastCount(node_ptr list);
+
 //Specific manipulations for this node type
 void incrementCount(char* port, char* host, char* path, node_ptr list);
 void incrementCountForNode(node_ptr node);

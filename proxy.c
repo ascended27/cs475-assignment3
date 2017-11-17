@@ -68,7 +68,12 @@ node_ptr cache;
 
 //Shared Cache=========================
 
+// Semaphores
+//Synchronization Methods
+sem_t reading;
+sem_t writing;
 
+pthread_mutex_t mutex;
 
 //My cache functions------------------------------
 int cacheIsFull() {
@@ -118,6 +123,12 @@ int main(int argc, char **argv) {
     cache = makeSingleList();
     cacheSize = 0;
 
+    //init semaphores
+    sem_init(&reading, 0, 0);
+    sem_init(&writing, 0, 0);
+
+    //mutex
+    pthread_mutex_init(&mutex, 0);
 
     int listenfd, connfd;
     socklen_t clientlen;
@@ -159,6 +170,7 @@ int main(int argc, char **argv) {
                 }
             }
 
+
             exit(0);
         }
     }
@@ -166,6 +178,9 @@ int main(int argc, char **argv) {
 	//Delete List
 	if(cache)
 		deleteList(cache);
+
+    sem_destroy(&reading);
+    sem_destroy(&writing);
 
     return 0;
 }
@@ -213,7 +228,13 @@ void *thread(void *argv) {
             node_ptr theNode;
 
             //ADD SOME KIND OF SYNCHRONIZATION HERE
+            //sem_wait(&writing);
+            //pthread_mutex_lock(&mutex);
+
             theNode = selectNodeByPath(req->port, req->host, req->path, cache);
+
+            //pthread_mutex_unlock(&mutex);
+            //sem_post(&reading);
             //END SOME KIND OF SYNCHRONIZATION HERE
 
             if (theNode) {
@@ -238,8 +259,8 @@ void *thread(void *argv) {
                 printf("%s", body);
                 printf("--------------------------------------------\n");
 
-                //increment the node count
                 incrementCountForNode(theNode);
+
                 //Write request directly to client from node
                 rio_writen(fd, theNode->data, theNode->size);
 
@@ -521,6 +542,7 @@ void forward(request *req, int clientfd) {
                         //dump node and check for NULL later to not insert
                         if(node)
                             freeNode(node);
+                        node = NULL;
                     }
                     //------------------------------------------------------------------------
 
@@ -539,8 +561,41 @@ void forward(request *req, int clientfd) {
         printf("INSERTING INTO LIST\n");
         fflush(stdout);
 
-        insertNode(node, cache);
+		if(fitsInCache(node->size)) {
+
+            //sem_wait(&reading);
+            //pthread_mutex_lock(&mutex);
+
+            insertNode(node, cache);
+
+            //pthread_mutex_unlock(&mutex);
+            //sem_post(&writing);
+        }
+        else
+        {
+            //sem_wait(&reading);
+            //pthread_mutex_lock(&mutex);
+
+            node_ptr removed = removeByLRU(cache);
+
+            if(removed)
+                freeNode(removed);
+
+            removed = NULL;
+            insertNode(node, cache);
+
+            //pthread_mutex_unlock(&mutex);
+            //sem_post(&writing);
+
+        }
+
+        //sem_wait(&writing);
+        //pthread_mutex_lock(&mutex);
+
         traverseListRight(cache);
+
+        //pthread_mutex_unlock(&mutex);
+        //sem_post(&reading);
 
         // Done with the server so close the connection
         if (close(serverfd) < 0) {

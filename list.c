@@ -6,8 +6,8 @@
 
 node_ptr makeSingleList()
 {
-    node_ptr start = makeNode(NULL, NULL, NULL, NULL, -1,  -1, NULL, NULL);
-    node_ptr end = makeNode(NULL, NULL, NULL, NULL, -1,  -1, NULL, NULL);
+    node_ptr start = makeNode(NULL, NULL, NULL, NULL, -1,  MAX_OBJECT_SIZE, NULL, NULL);
+    node_ptr end = makeNode(NULL, NULL, NULL, NULL, -1, MAX_OBJECT_SIZE, NULL, NULL);
 
     start->next = end;
     end->previous = start;
@@ -113,6 +113,35 @@ int nodesEqual(node_ptr node1, node_ptr node2)
         return 0;
 
     return strcmp(node1->port, node2->port) == 0 && strcmp(node1->path, node2->path) == 0 && strcmp(node1->host, node2->host) == 0;
+}
+
+node_ptr removeByLRU(node_ptr list)
+{
+	node_ptr node = selectNodeWithLeastCount(list);
+	if(node)
+	{
+		return removeNode(node, list);
+	}
+	else
+		return NULL;
+}
+
+node_ptr selectNodeWithLeastCount(node_ptr list)
+{
+	int min = MAX_OBJECT_SIZE;
+	node_ptr leastUsed;
+
+	node_ptr ptr;
+	for(ptr = list->next; ptr; ptr = ptr->next)
+	{
+		if(ptr->countUses < min)
+		{
+			leastUsed = ptr;
+			min = ptr->size;
+		}
+	}
+
+	return leastUsed;
 }
 
 node_ptr selectNodeByPath(char* port, char* host, char* path, node_ptr list)

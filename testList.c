@@ -29,7 +29,6 @@ int main(int argc, char**argv)
 
 	//if(n4)
 	//	freeNode(n4);
-
 	
 	traverseListRight(list);
 
